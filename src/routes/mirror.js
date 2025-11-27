@@ -216,17 +216,8 @@ Please respond with warmth and provide helpful guidance based on their message a
   // Default intelligent response
   else {
     // Check if it seems like a question
-    const isQuestion = lowerMessage.includes('?') || 
-                       lowerMessage.startsWith('what') || 
-                       lowerMessage.startsWith('how') || 
-                       lowerMessage.startsWith('why') || 
-                       lowerMessage.startsWith('when') || 
-                       lowerMessage.startsWith('where') || 
-                       lowerMessage.startsWith('who') ||
-                       lowerMessage.startsWith('can') ||
-                       lowerMessage.startsWith('do') ||
-                       lowerMessage.startsWith('is') ||
-                       lowerMessage.startsWith('are');
+    const questionStarters = ['what', 'how', 'why', 'when', 'where', 'who', 'can', 'do', 'is', 'are'];
+    const isQuestion = lowerMessage.includes('?') || questionStarters.some(starter => lowerMessage.startsWith(starter));
     
     if (isQuestion) {
       reply = `That's a great question! While I'm specialized in helping with your memories and the EternalMe app, I'd love to assist you. Could you tell me more about what you're looking for? I can help you:\n\n• Connect social media accounts\n• Upload and organize memories\n• Create photo/video montages\n• Explore your memory insights\n• Navigate the app features\n\nWhat would you like to explore?`;
