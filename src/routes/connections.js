@@ -1,10 +1,15 @@
 const express = require('express');
+const crypto = require('crypto');
 const prisma = require('../prismaClient');
 const { authRequired } = require('../middleware/auth');
 const { URLSearchParams } = require('url');
 require('dotenv').config();
 
 const router = express.Router();
+
+// Store pending OAuth states for validation (in production use Redis or database)
+const pendingStates = new Map();
+const STATE_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
 
 /**
  * OAuth configuration for supported providers
@@ -98,6 +103,82 @@ router.post('/:appId/toggle', authRequired, async (req, res) => {
 });
 
 /**
+ * Initialize OAuth flow - returns OAuth URL instead of redirecting
+ * POST /connections/:appId/init
+ * 
+ * This allows the frontend to open the OAuth URL in a popup without exposing tokens in URLs
+ */
+router.post('/:appId/init', authRequired, async (req, res) => {
+  const appId = req.params.appId;
+  const userId = req.user.id;
+  const config = OAUTH_CONFIG[appId];
+  
+  if (!config) {
+    return res.status(400).json({ error: 'unsupported_app', message: `App "${appId}" is not supported` });
+  }
+  
+  if (!config.configured) {
+    return res.status(400).json({ 
+      error: 'oauth_not_configured', 
+      message: `OAuth credentials for ${appId} are not configured.`
+    });
+  }
+
+  // Generate cryptographically secure state parameter
+  const nonce = crypto.randomBytes(16).toString('hex');
+  const timestamp = Date.now();
+  const stateData = { userId, appId, nonce, timestamp };
+  const state = Buffer.from(JSON.stringify(stateData)).toString('base64url');
+  
+  // Store state for validation
+  for (const [key, value] of pendingStates.entries()) {
+    if (Date.now() - value.timestamp > STATE_EXPIRY_MS) {
+      pendingStates.delete(key);
+    }
+  }
+  pendingStates.set(nonce, stateData);
+
+  let oauthUrl;
+  
+  if (appId === 'facebook' || appId === 'instagram') {
+    const params = new URLSearchParams({
+      client_id: config.clientId,
+      redirect_uri: config.callbackUrl,
+      state,
+      response_type: 'code',
+      scope: config.scopes.join(',')
+    });
+    oauthUrl = `${config.authUrl}?${params.toString()}`;
+  } else if (appId === 'tiktok') {
+    const params = new URLSearchParams({
+      client_key: config.clientId,
+      redirect_uri: config.callbackUrl,
+      state,
+      response_type: 'code',
+      scope: config.scopes.join(',')
+    });
+    oauthUrl = `${config.authUrl}?${params.toString()}`;
+  } else if (appId === 'photos') {
+    const params = new URLSearchParams({
+      client_id: config.clientId,
+      redirect_uri: config.callbackUrl,
+      state,
+      response_type: 'code',
+      scope: config.scopes.join(' '),
+      access_type: 'offline',
+      prompt: 'consent'
+    });
+    oauthUrl = `${config.authUrl}?${params.toString()}`;
+  }
+
+  if (oauthUrl) {
+    return res.json({ success: true, oauthUrl });
+  }
+  
+  res.status(400).json({ error: 'unsupported_app' });
+});
+
+/**
  * Start OAuth flow for provider (redirect to provider)
  * GET /connections/:appId/connect
  *
@@ -124,13 +205,19 @@ router.get('/:appId/connect', authRequired, async (req, res) => {
     });
   }
 
-  // Generate secure state parameter
-  const state = Buffer.from(JSON.stringify({
-    userId,
-    appId,
-    nonce: Math.random().toString(36).slice(2, 10),
-    timestamp: Date.now()
-  })).toString('base64url');
+  // Generate cryptographically secure state parameter
+  const nonce = crypto.randomBytes(16).toString('hex');
+  const timestamp = Date.now();
+  const stateData = { userId, appId, nonce, timestamp };
+  const state = Buffer.from(JSON.stringify(stateData)).toString('base64url');
+  
+  // Store state for validation (cleanup expired states)
+  for (const [key, value] of pendingStates.entries()) {
+    if (Date.now() - value.timestamp > STATE_EXPIRY_MS) {
+      pendingStates.delete(key);
+    }
+  }
+  pendingStates.set(nonce, stateData);
 
   if (appId === 'facebook') {
     const params = new URLSearchParams({
@@ -182,15 +269,51 @@ router.get('/:appId/connect', authRequired, async (req, res) => {
 });
 
 /**
- * Parse state parameter from OAuth callback
+ * Parse and validate state parameter from OAuth callback
+ * Returns null if validation fails
  */
-function parseState(state) {
+function parseAndValidateState(state) {
+  if (!state || typeof state !== 'string') {
+    return null;
+  }
+  
   try {
-    return JSON.parse(Buffer.from(state, 'base64url').toString());
+    const stateData = JSON.parse(Buffer.from(state, 'base64url').toString());
+    
+    // Validate required fields exist
+    if (!stateData.userId || !stateData.appId || !stateData.nonce || !stateData.timestamp) {
+      return null;
+    }
+    
+    // Validate types
+    if (typeof stateData.userId !== 'string' || 
+        typeof stateData.appId !== 'string' || 
+        typeof stateData.nonce !== 'string' ||
+        typeof stateData.timestamp !== 'number') {
+      return null;
+    }
+    
+    // Validate timestamp is not expired (10 minutes max)
+    if (Date.now() - stateData.timestamp > STATE_EXPIRY_MS) {
+      console.warn('OAuth state expired');
+      return null;
+    }
+    
+    // Validate against stored state to prevent replay attacks
+    const storedState = pendingStates.get(stateData.nonce);
+    if (!storedState || 
+        storedState.userId !== stateData.userId || 
+        storedState.appId !== stateData.appId) {
+      console.warn('OAuth state validation failed - possible replay attack');
+      return null;
+    }
+    
+    // Remove used state to prevent reuse
+    pendingStates.delete(stateData.nonce);
+    
+    return stateData;
   } catch {
-    // Fallback for old-style state format
-    const parts = (state || '').split(':');
-    return { userId: parts[0], appId: parts[1] };
+    return null;
   }
 }
 
@@ -222,12 +345,24 @@ router.get('/:appId/callback', async (req, res) => {
     `);
   }
 
-  const stateData = parseState(state);
-  const userId = stateData.userId;
-
-  if (!userId) {
-    return res.status(400).send('Invalid state parameter');
+  const stateData = parseAndValidateState(state);
+  
+  if (!stateData) {
+    return res.status(400).send(`
+      <html>
+        <head><title>Connection Failed</title></head>
+        <body style="font-family: system-ui; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #0a0a0a; color: white;">
+          <div style="text-align: center; padding: 2rem;">
+            <h2>Connection Failed</h2>
+            <p style="color: #999;">Invalid or expired authorization state. Please try again.</p>
+            <p style="margin-top: 2rem;"><a href="javascript:window.close()" style="color: #06b6d4;">Close this window</a></p>
+          </div>
+        </body>
+      </html>
+    `);
   }
+  
+  const userId = stateData.userId;
 
   try {
     if (appId === 'facebook') {

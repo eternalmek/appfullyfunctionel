@@ -8,8 +8,17 @@ const router = express.Router();
 
 const OPENAI_KEY = process.env.OPENAI_API_KEY;
 let openai = null;
+let openaiInitError = null;
+
 if (OPENAI_KEY) {
-  openai = new OpenAI({ apiKey: OPENAI_KEY });
+  try {
+    openai = new OpenAI({ apiKey: OPENAI_KEY });
+  } catch (err) {
+    openaiInitError = err.message;
+    console.error('Failed to initialize OpenAI client:', err.message);
+  }
+} else {
+  console.warn('OpenAI API key not configured. AI responses will use fallback mode.');
 }
 
 /**

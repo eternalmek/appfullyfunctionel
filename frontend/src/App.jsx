@@ -620,29 +620,45 @@ const Core = ({ connectedApps, setConnectedApps }) => {
     } else {
       // Check if OAuth is configured for this app
       if (configStatus[appId]) {
-        // Real OAuth flow - open in new window
-        const connectUrl = connectionsAPI.getConnectUrl(appId);
-        const popup = window.open(connectUrl, `Connect ${appId}`, 'width=600,height=700');
-        
-        // Poll for connection status
+        // Real OAuth flow - get OAuth URL from backend first, then open popup
         setProcessing(appId);
-        const checkInterval = setInterval(async () => {
-          try {
-            if (popup?.closed) {
-              clearInterval(checkInterval);
-              // Refresh connection status
-              const result = await connectionsAPI.list();
-              if (result.connections) {
-                setConnectedApps(result.connections);
-                localStorage.setItem('eternal_connections', JSON.stringify(result.connections));
+        try {
+          const initResult = await connectionsAPI.initConnect(appId);
+          if (initResult.oauthUrl) {
+            const popup = window.open(initResult.oauthUrl, `Connect ${appId}`, 'width=600,height=700');
+            
+            // Poll for connection status with exponential backoff
+            let pollCount = 0;
+            const maxPolls = 60; // Max 2 minutes of polling
+            
+            const checkConnection = async () => {
+              pollCount++;
+              try {
+                if (popup?.closed || pollCount >= maxPolls) {
+                  // Refresh connection status
+                  const result = await connectionsAPI.list();
+                  if (result.connections) {
+                    setConnectedApps(result.connections);
+                    localStorage.setItem('eternal_connections', JSON.stringify(result.connections));
+                  }
+                  setProcessing(null);
+                  return;
+                }
+                // Use exponential backoff: 2s, 2s, 2s, 3s, 4s, etc.
+                const delay = pollCount <= 3 ? 2000 : Math.min(2000 + (pollCount - 3) * 1000, 5000);
+                setTimeout(checkConnection, delay);
+              } catch {
+                setProcessing(null);
               }
-              setProcessing(null);
-            }
-          } catch {
-            clearInterval(checkInterval);
+            };
+            
+            setTimeout(checkConnection, 2000);
+          } else {
             setProcessing(null);
           }
-        }, 1000);
+        } catch {
+          setProcessing(null);
+        }
       } else {
         // Demo mode - simulate connection
         setProcessing(appId);

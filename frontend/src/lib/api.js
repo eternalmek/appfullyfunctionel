@@ -157,10 +157,14 @@ export const connectionsAPI = {
     return res.json();
   },
 
-  // Start OAuth flow - returns URL to redirect to
-  getConnectUrl: (appId) => {
-    const token = localStorage.getItem('accessToken');
-    return `${API_BASE_URL}/connections/${appId}/connect?token=${token}`;
+  // Initialize OAuth flow - returns the OAuth URL to navigate to
+  // Uses POST to avoid exposing tokens in URL
+  initConnect: async (appId) => {
+    const res = await fetch(`${API_BASE_URL}/connections/${appId}/init`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    });
+    return res.json();
   },
 
   // Import media from connected account
