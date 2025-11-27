@@ -32,7 +32,7 @@ import { authAPI, memoriesAPI, connectionsAPI, mirrorAPI, uploadAPI } from './li
 // Default avatar as data URI (simple user icon)
 const DEFAULT_AVATAR = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%236b7280'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
 
-// --- DEFAULT DATA (for offline/demo mode) ---
+// --- DEFAULT DATA ---
 const DEFAULT_USER = {
   name: "User",
   handle: "@user",
@@ -114,7 +114,8 @@ const AuthPage = ({ onLogin }) => {
           setOauthConfig(result.configStatus);
         }
       } catch {
-        // OAuth config not available, will use demo mode
+        // OAuth config not available - require backend to be running
+        console.error('Cannot connect to backend. Please ensure the server is running.');
       }
     };
     fetchOAuthConfig();
@@ -145,11 +146,11 @@ const AuthPage = ({ onLogin }) => {
           localStorage.setItem('user', JSON.stringify(result.user));
           onLogin(result.user);
         }
-      } catch {
-        // Fallback for demo mode when backend is unavailable
-        console.warn('API unavailable, using demo mode');
-        localStorage.setItem('eternal_session', formData.email);
-        onLogin({ ...DEFAULT_USER, email: formData.email });
+      } catch (err) {
+        // Backend unavailable - show error
+        console.error('API unavailable:', err);
+        setError('Cannot connect to server. Please ensure the backend is running.');
+        setIsLoading(false);
       }
     } else {
       // Social login - check if OAuth is configured
@@ -169,11 +170,8 @@ const AuthPage = ({ onLogin }) => {
           setError('Failed to connect to login service. Please try again.');
         }
       } else {
-        // Demo mode - simulate connection
-        setTimeout(() => {
-          localStorage.setItem('eternal_session', `User via ${provider}`);
-          onLogin({ ...DEFAULT_USER, name: `User via ${provider}` });
-        }, 1500);
+        // OAuth not configured - show helpful error
+        setError(`${provider} login is not configured. Please configure OAuth credentials in the backend environment variables.`);
       }
     }
     setIsLoading(false);
@@ -191,7 +189,7 @@ const AuthPage = ({ onLogin }) => {
     if (oauthConfig[providerKey]) {
       return `Sign in with ${provider}`;
     }
-    return `Continue with ${provider} (Demo)`;
+    return `${provider} login not configured`;
   };
 
   return (
@@ -333,9 +331,9 @@ const AuthPage = ({ onLogin }) => {
 
         {/* OAuth configuration status notice */}
         {!oauthConfig.facebook && !oauthConfig.instagram && !oauthConfig.tiktok && (
-          <div className="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl">
-            <p className="text-yellow-400 text-xs text-center">
-              Demo Mode: Social login is simulated. Configure OAuth credentials to enable real login.
+          <div className="mt-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+            <p className="text-amber-400 text-xs text-center">
+              Social login requires OAuth credentials. Configure them in the backend environment or use email/password.
             </p>
           </div>
         )}
@@ -595,14 +593,12 @@ const Mirror = () => {
         throw new Error('No reply');
       }
     } catch {
-      // Fallback response for demo mode
-      setTimeout(() => {
-        setMessages(prev => [...prev, { 
-          id: Date.now() + 1, 
-          text: "I found some related memories. Would you like me to create a montage or list them for you?", 
-          sender: 'ai' 
-        }]);
-      }, 500);
+      // Show error when AI service is unavailable
+      setMessages(prev => [...prev, { 
+        id: Date.now() + 1, 
+        text: "I'm having trouble connecting right now. Please check that the OpenAI API key is configured in the backend.", 
+        sender: 'ai' 
+      }]);
     }
     setIsLoading(false);
   };
@@ -697,7 +693,8 @@ const Core = ({ connectedApps, setConnectedApps }) => {
           setConnectedApps(result.connections);
         }
       } catch {
-        // Use demo mode if API unavailable
+        // API unavailable - show error
+        console.error('Cannot connect to backend. Please ensure the server is running.');
       }
     };
     fetchConfig();
@@ -709,17 +706,13 @@ const Core = ({ connectedApps, setConnectedApps }) => {
       setProcessing(appId);
       try {
         await connectionsAPI.disconnect(appId);
+        const newConnections = { ...connectedApps, [appId]: false };
+        setConnectedApps(newConnections);
+        localStorage.setItem('eternal_connections', JSON.stringify(newConnections));
       } catch {
-        // Fallback to toggle for demo
-        try {
-          await connectionsAPI.toggle(appId);
-        } catch {
-          // Continue even if API fails for demo
-        }
+        setUploadStatus({ type: 'error', message: 'Failed to disconnect. Please try again.' });
+        setTimeout(() => setUploadStatus(null), 3000);
       }
-      const newConnections = { ...connectedApps, [appId]: false };
-      setConnectedApps(newConnections);
-      localStorage.setItem('eternal_connections', JSON.stringify(newConnections));
       setProcessing(null);
     } else {
       // Check if OAuth is configured for this app
@@ -759,24 +752,22 @@ const Core = ({ connectedApps, setConnectedApps }) => {
             setTimeout(checkConnection, 2000);
           } else {
             setProcessing(null);
+            setUploadStatus({ type: 'error', message: initResult.message || 'Failed to initialize connection.' });
+            setTimeout(() => setUploadStatus(null), 3000);
           }
         } catch {
           setProcessing(null);
+          setUploadStatus({ type: 'error', message: 'Failed to connect. Please try again.' });
+          setTimeout(() => setUploadStatus(null), 3000);
         }
       } else {
-        // Demo mode - simulate connection
-        setProcessing(appId);
-        try {
-          await connectionsAPI.toggle(appId);
-        } catch {
-          // Continue even if API fails for demo
-        }
-        setTimeout(() => {
-          const newConnections = { ...connectedApps, [appId]: true };
-          setConnectedApps(newConnections);
-          localStorage.setItem('eternal_connections', JSON.stringify(newConnections));
-          setProcessing(null);
-        }, 1500);
+        // OAuth not configured - show error message
+        const appName = appId.charAt(0).toUpperCase() + appId.slice(1);
+        setUploadStatus({ 
+          type: 'error', 
+          message: `${appName} OAuth is not configured. Please add OAuth credentials in the backend environment.` 
+        });
+        setTimeout(() => setUploadStatus(null), 5000);
       }
     }
   };
@@ -951,11 +942,11 @@ const Core = ({ connectedApps, setConnectedApps }) => {
       </div>
 
       {!configStatus.facebook && !configStatus.instagram && !configStatus.tiktok && !configStatus.photos && (
-        <div className="mt-6 p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-xl">
-          <p className="text-yellow-400 text-sm font-medium">Demo Mode Active</p>
-          <p className="text-yellow-400/70 text-xs mt-1">
-            OAuth credentials are not configured. Connections are simulated. To enable real connections, 
-            add OAuth credentials for Facebook, Instagram, TikTok, or Google in the environment variables.
+        <div className="mt-6 p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+          <p className="text-amber-400 text-sm font-medium">OAuth Configuration Required</p>
+          <p className="text-amber-400/70 text-xs mt-1">
+            To connect social media accounts, add OAuth credentials for Facebook, Instagram, TikTok, or Google 
+            in the backend environment variables. You can still upload files directly.
           </p>
         </div>
       )}
@@ -976,37 +967,46 @@ export default function App() {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        // Check for existing session
-        const userSession = localStorage.getItem('eternal_session');
-        const savedUser = localStorage.getItem('user');
         const savedConnections = localStorage.getItem('eternal_connections');
         const accessToken = localStorage.getItem('accessToken');
         
         if (accessToken) {
           // Verify token with backend
-          const result = await authAPI.getMe();
-          if (result.user) {
-            setCurrentUser(result.user);
-            setIsLoggedIn(true);
-          } else {
-            // Try to refresh token
-            const refreshResult = await authAPI.refresh();
-            if (refreshResult?.accessToken) {
-              localStorage.setItem('accessToken', refreshResult.accessToken);
-              localStorage.setItem('refreshToken', refreshResult.refreshToken);
-              const meResult = await authAPI.getMe();
-              if (meResult.user) {
-                setCurrentUser(meResult.user);
-                setIsLoggedIn(true);
+          try {
+            const result = await authAPI.getMe();
+            if (result.user) {
+              setCurrentUser(result.user);
+              setIsLoggedIn(true);
+            } else {
+              // Try to refresh token
+              const refreshResult = await authAPI.refresh();
+              if (refreshResult?.accessToken) {
+                localStorage.setItem('accessToken', refreshResult.accessToken);
+                localStorage.setItem('refreshToken', refreshResult.refreshToken);
+                const meResult = await authAPI.getMe();
+                if (meResult.user) {
+                  setCurrentUser(meResult.user);
+                  setIsLoggedIn(true);
+                } else {
+                  // Invalid session - clear tokens
+                  localStorage.removeItem('accessToken');
+                  localStorage.removeItem('refreshToken');
+                  localStorage.removeItem('user');
+                }
+              } else {
+                // Refresh failed - clear tokens
+                localStorage.removeItem('accessToken');
+                localStorage.removeItem('refreshToken');
+                localStorage.removeItem('user');
               }
             }
+          } catch {
+            // Backend unavailable - clear tokens
+            console.error('Backend unavailable');
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshToken');
+            localStorage.removeItem('user');
           }
-        } else if (userSession) {
-          // Fallback demo mode
-          if (savedUser) {
-            setCurrentUser(JSON.parse(savedUser));
-          }
-          setIsLoggedIn(true);
         }
         
         if (savedConnections) {
@@ -1045,7 +1045,6 @@ export default function App() {
     } catch {
       // Continue even if API fails
     }
-    localStorage.removeItem('eternal_session');
     localStorage.removeItem('user');
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
