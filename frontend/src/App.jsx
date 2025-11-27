@@ -63,6 +63,62 @@ const AuthPage = ({ onLogin }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [formData, setFormData] = useState({ email: '', password: '', name: '' });
+  const [oauthConfig, setOauthConfig] = useState({});
+
+  // Check for OAuth callback on mount - using ref to track initial error
+  const initialErrorRef = useRef(null);
+  
+  useEffect(() => {
+    // Check URL for OAuth callback
+    const params = new URLSearchParams(window.location.search);
+    const hash = window.location.hash;
+    
+    if (params.get('oauth_success') === 'true' && hash) {
+      // Parse tokens from hash fragment
+      const hashParams = new URLSearchParams(hash.substring(1));
+      const accessToken = hashParams.get('access_token');
+      const refreshToken = hashParams.get('refresh_token');
+      const userStr = hashParams.get('user');
+      
+      if (accessToken && refreshToken && userStr) {
+        try {
+          const user = JSON.parse(decodeURIComponent(userStr));
+          localStorage.setItem('accessToken', accessToken);
+          localStorage.setItem('refreshToken', refreshToken);
+          localStorage.setItem('user', JSON.stringify(user));
+          // Clean up URL
+          window.history.replaceState({}, document.title, window.location.pathname);
+          onLogin(user);
+        } catch (e) {
+          console.error('Failed to parse OAuth user data:', e);
+          initialErrorRef.current = 'Failed to complete login. Please try again.';
+        }
+      }
+    } else if (params.get('oauth_error')) {
+      initialErrorRef.current = decodeURIComponent(params.get('oauth_error'));
+      // Clean up URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    // Set initial error if there was one from OAuth callback
+    if (initialErrorRef.current) {
+      setError(initialErrorRef.current);
+      initialErrorRef.current = null;
+    }
+
+    // Fetch OAuth configuration
+    const fetchOAuthConfig = async () => {
+      try {
+        const result = await authAPI.getOAuthConfig();
+        if (result.configStatus) {
+          setOauthConfig(result.configStatus);
+        }
+      } catch {
+        // OAuth config not available, will use demo mode
+      }
+    };
+    fetchOAuthConfig();
+  }, [onLogin]);
 
   const handleLogin = async (provider) => {
     setIsLoading(true);
@@ -96,11 +152,29 @@ const AuthPage = ({ onLogin }) => {
         onLogin({ ...DEFAULT_USER, email: formData.email });
       }
     } else {
-      // Social login simulation for demo
-      setTimeout(() => {
-        localStorage.setItem('eternal_session', `User via ${provider}`);
-        onLogin({ ...DEFAULT_USER, name: `User via ${provider}` });
-      }, 1500);
+      // Social login - check if OAuth is configured
+      const providerKey = provider.toLowerCase();
+      if (oauthConfig[providerKey]) {
+        // Real OAuth flow
+        try {
+          const result = await authAPI.initOAuthLogin(providerKey);
+          if (result.oauthUrl) {
+            // Redirect to OAuth provider
+            window.location.href = result.oauthUrl;
+            return; // Don't reset loading state since we're redirecting
+          } else {
+            setError(result.message || 'Failed to initialize OAuth login');
+          }
+        } catch {
+          setError('Failed to connect to login service. Please try again.');
+        }
+      } else {
+        // Demo mode - simulate connection
+        setTimeout(() => {
+          localStorage.setItem('eternal_session', `User via ${provider}`);
+          onLogin({ ...DEFAULT_USER, name: `User via ${provider}` });
+        }, 1500);
+      }
     }
     setIsLoading(false);
   };
@@ -109,6 +183,15 @@ const AuthPage = ({ onLogin }) => {
     e.preventDefault();
     if(!formData.email || !formData.password) return;
     handleLogin('email');
+  };
+
+  // Get button tooltip based on OAuth config
+  const getButtonTooltip = (provider) => {
+    const providerKey = provider.toLowerCase();
+    if (oauthConfig[providerKey]) {
+      return `Sign in with ${provider}`;
+    }
+    return `Continue with ${provider} (Demo)`;
   };
 
   return (
@@ -137,26 +220,38 @@ const AuthPage = ({ onLogin }) => {
         <div className="grid grid-cols-3 gap-3 mb-8">
           <button 
             onClick={() => handleLogin('Instagram')}
-            className="flex items-center justify-center py-3 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl transition-all hover:scale-105 group"
-            title="Continue with Instagram"
+            disabled={isLoading}
+            className="flex items-center justify-center py-3 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl transition-all hover:scale-105 group disabled:opacity-50 disabled:cursor-not-allowed relative"
+            title={getButtonTooltip('Instagram')}
           >
             <Instagram size={22} className="text-pink-500 group-hover:text-pink-400 transition-colors" />
+            {oauthConfig.instagram && (
+              <span className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full" title="OAuth configured"></span>
+            )}
           </button>
           
           <button 
             onClick={() => handleLogin('Facebook')}
-            className="flex items-center justify-center py-3 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl transition-all hover:scale-105 group"
-            title="Continue with Facebook"
+            disabled={isLoading}
+            className="flex items-center justify-center py-3 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl transition-all hover:scale-105 group disabled:opacity-50 disabled:cursor-not-allowed relative"
+            title={getButtonTooltip('Facebook')}
           >
             <Facebook size={22} className="text-blue-600 group-hover:text-blue-500 transition-colors" />
+            {oauthConfig.facebook && (
+              <span className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full" title="OAuth configured"></span>
+            )}
           </button>
 
           <button 
             onClick={() => handleLogin('TikTok')}
-            className="flex items-center justify-center py-3 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl transition-all hover:scale-105 group"
-            title="Continue with TikTok"
+            disabled={isLoading}
+            className="flex items-center justify-center py-3 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl transition-all hover:scale-105 group disabled:opacity-50 disabled:cursor-not-allowed relative"
+            title={getButtonTooltip('TikTok')}
           >
             <TikTokIcon size={22} className="text-white group-hover:text-cyan-400 transition-colors" />
+            {oauthConfig.tiktok && (
+              <span className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full" title="OAuth configured"></span>
+            )}
           </button>
         </div>
 
@@ -235,6 +330,15 @@ const AuthPage = ({ onLogin }) => {
             </button>
           </p>
         </div>
+
+        {/* OAuth configuration status notice */}
+        {!oauthConfig.facebook && !oauthConfig.instagram && !oauthConfig.tiktok && (
+          <div className="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl">
+            <p className="text-yellow-400 text-xs text-center">
+              Demo Mode: Social login is simulated. Configure OAuth credentials to enable real login.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

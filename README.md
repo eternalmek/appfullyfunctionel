@@ -138,26 +138,36 @@ Without an OpenAI API key, the Mirror will use intelligent fallback responses th
 To enable real OAuth connections with social media platforms, you need to register your app with each provider and add the credentials to your backend `.env`:
 
 ### Facebook/Instagram
+Register at: https://developers.facebook.com/apps/
 ```
 OAUTH_FACEBOOK_CLIENT_ID=your-facebook-app-id
 OAUTH_FACEBOOK_CLIENT_SECRET=your-facebook-app-secret
 OAUTH_FACEBOOK_CALLBACK_URL=https://your-backend.com/connections/facebook/callback
+OAUTH_FACEBOOK_LOGIN_CALLBACK_URL=https://your-backend.com/auth/oauth/facebook/callback
 OAUTH_INSTAGRAM_CALLBACK_URL=https://your-backend.com/connections/instagram/callback
+OAUTH_INSTAGRAM_LOGIN_CALLBACK_URL=https://your-backend.com/auth/oauth/instagram/callback
 ```
 
 ### TikTok
+Register at: https://developers.tiktok.com/
 ```
 OAUTH_TIKTOK_CLIENT_ID=your-tiktok-client-key
 OAUTH_TIKTOK_CLIENT_SECRET=your-tiktok-client-secret
 OAUTH_TIKTOK_CALLBACK_URL=https://your-backend.com/connections/tiktok/callback
+OAUTH_TIKTOK_LOGIN_CALLBACK_URL=https://your-backend.com/auth/oauth/tiktok/callback
 ```
 
 ### Google Photos
+Register at: https://console.cloud.google.com/apis/credentials
 ```
 OAUTH_GOOGLE_CLIENT_ID=your-google-client-id
 OAUTH_GOOGLE_CLIENT_SECRET=your-google-client-secret
 OAUTH_GOOGLE_CALLBACK_URL=https://your-backend.com/connections/photos/callback
 ```
+
+**Note:** There are two types of OAuth callbacks:
+- **Login callbacks** (`/auth/oauth/:provider/callback`) - Used for signing in/up with social accounts
+- **Connection callbacks** (`/connections/:provider/callback`) - Used for connecting accounts to import media after login
 
 Without OAuth credentials, the app runs in **demo mode** where connections are simulated locally.
 
@@ -169,6 +179,9 @@ Without OAuth credentials, the app runs in **demo mode** where connections are s
 - `POST /auth/refresh` - Refresh access token
 - `POST /auth/logout` - Logout (revoke refresh token)
 - `GET /auth/me` - Get current user
+- `GET /auth/oauth/config` - Get OAuth provider configuration status
+- `POST /auth/oauth/:provider/init` - Initialize OAuth login flow
+- `GET /auth/oauth/:provider/callback` - OAuth login callback
 
 ### Memories
 - `GET /memories` - List memories (public)
