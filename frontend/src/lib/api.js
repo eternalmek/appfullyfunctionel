@@ -30,15 +30,24 @@ export const authAPI = {
   logout: async () => {
     const refreshToken = localStorage.getItem('refreshToken');
     if (refreshToken) {
-      await fetch(`${API_BASE_URL}/auth/logout`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
-      });
+      try {
+        await fetch(`${API_BASE_URL}/auth/logout`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+        });
+      } catch {
+        // Continue with local cleanup even if API call fails
+      }
     }
+    // Clear all auth-related storage
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
+    localStorage.removeItem('eternal_session');
+    localStorage.removeItem('eternal_connections');
+    // Clear session storage as well
+    sessionStorage.clear();
   },
 
   getMe: async () => {
