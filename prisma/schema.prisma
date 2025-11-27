@@ -1,0 +1,83 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String      @id @default(uuid())
+  name           String
+  email          String      @unique
+  handle         String      @unique
+  avatar         String?
+  passwordHash   String?
+  createdAt      DateTime    @default(now())
+  memories       Memory[]
+  comments       Comment[]
+  likes          Like[]
+  connections    Connection[]
+  refreshTokens  RefreshToken[]
+}
+
+model Memory {
+  id         String    @id @default(uuid())
+  user       User      @relation(fields: [userId], references: [id])
+  userId     String
+  type       String
+  mediaUrl   String?
+  caption    String?
+  dateText   String?   // friendly date text like "2 hours ago"
+  location   String?
+  duration   String?
+  likesCount Int       @default(0)
+  commentsCount Int    @default(0)
+  createdAt  DateTime  @default(now())
+  comments   Comment[]
+  likes      Like[]
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  memory    Memory   @relation(fields: [memoryId], references: [id])
+  memoryId  String
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  text      String
+  createdAt DateTime @default(now())
+}
+
+model Like {
+  id        String   @id @default(uuid())
+  memory    Memory   @relation(fields: [memoryId], references: [id])
+  memoryId  String
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  createdAt DateTime @default(now())
+
+  @@unique([memoryId, userId])
+}
+
+model Connection {
+  id         String  @id @default(uuid())
+  user       User    @relation(fields: [userId], references: [id])
+  userId     String
+  appId      String
+  connected  Boolean @default(false)
+  token      String?  // provider token (if any) encrypted in real prod
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, appId])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  token     String   @unique
+  revoked   Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
