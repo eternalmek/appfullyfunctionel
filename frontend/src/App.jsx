@@ -27,34 +27,20 @@ import {
   Mail, 
   ArrowRight
 } from 'lucide-react';
-import { authAPI, memoriesAPI, connectionsAPI, mirrorAPI } from './lib/api';
+import { authAPI, memoriesAPI, connectionsAPI, mirrorAPI, uploadAPI } from './lib/api';
 
 // Default avatar as data URI (simple user icon)
 const DEFAULT_AVATAR = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%236b7280'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
 
-// --- MOCK DATA (used when API is unavailable) ---
+// --- DEFAULT DATA (for offline/demo mode) ---
 const DEFAULT_USER = {
-  name: "Alex",
-  handle: "@alex_eternal",
+  name: "User",
+  handle: "@user",
   avatar: DEFAULT_AVATAR,
 };
 
-const INITIAL_MEMORIES = [
-  {
-    id: 1, type: 'video', user: DEFAULT_USER, date: '2 hours ago', location: 'Kyoto, Japan',
-    media: 'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=800&h=600&fit=crop',
-    caption: 'The lights here never sleep. 🎌 #TravelDiaries', likes: 234, comments: 12
-  },
-  {
-    id: 2, type: 'audio', user: DEFAULT_USER, date: 'Yesterday', location: 'Voice Note', duration: '0:45',
-    caption: 'Midnight thoughts on the new project...', likes: 45, comments: 2
-  },
-  {
-    id: 3, type: 'photo', user: DEFAULT_USER, date: 'Nov 14, 2023', location: 'Brooklyn, NY',
-    media: 'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?w=800&h=800&fit=crop',
-    caption: 'Sunday brunch crew. ☕️', likes: 892, comments: 45
-  }
-];
+// Empty initial memories - users should connect accounts or upload their own data
+const INITIAL_MEMORIES = [];
 
 // --- CUSTOM ICONS ---
 // Simple SVG for TikTok since it's not in Lucide
@@ -366,12 +352,52 @@ const Feed = ({ currentUser }) => {
     );
   }
 
+  // Empty state when no memories
+  if (memories.length === 0) {
+    return (
+      <div className="max-w-2xl mx-auto pb-24 md:pb-0 pt-20 md:pt-10 px-4 animate-in fade-in duration-500">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h2 className="text-2xl font-bold text-white">Your Timeline</h2>
+            <p className="text-gray-500 text-sm">Your memories will appear here</p>
+          </div>
+        </div>
+        
+        <div className="flex flex-col items-center justify-center py-16 px-4">
+          <div className="p-6 bg-white/5 rounded-full mb-6">
+            <ImageIcon className="text-cyan-400" size={48} />
+          </div>
+          <h3 className="text-xl font-bold text-white mb-2">No memories yet</h3>
+          <p className="text-gray-400 text-center max-w-md mb-8">
+            Start preserving your precious moments! Connect your social media accounts or upload your own photos and videos.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4">
+            <button 
+              onClick={() => window.location.hash = '#core'}
+              className="px-6 py-3 bg-gradient-to-r from-cyan-600 to-purple-600 hover:from-cyan-500 hover:to-purple-500 text-white font-medium rounded-xl transition-all flex items-center gap-2"
+            >
+              <UploadCloud size={20} />
+              Upload Files
+            </button>
+            <button 
+              onClick={() => window.location.hash = '#core'}
+              className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white font-medium rounded-xl transition-all flex items-center gap-2 border border-white/10"
+            >
+              <Instagram size={20} />
+              Connect Accounts
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-2xl mx-auto pb-24 md:pb-0 pt-20 md:pt-10 px-4 animate-in fade-in duration-500">
       <div className="flex items-center justify-between mb-8">
         <div>
           <h2 className="text-2xl font-bold text-white">Your Timeline</h2>
-          <p className="text-gray-500 text-sm">Synchronized from connected sources</p>
+          <p className="text-gray-500 text-sm">{memories.length} memories from your connected sources</p>
         </div>
         <div className="flex bg-white/5 p-1 rounded-lg">
           <button onClick={() => setViewMode('list')} className={`p-2 rounded-md transition-all ${viewMode === 'list' ? 'bg-white/10 text-white' : 'text-gray-500'}`}><List size={18} /></button>
@@ -439,7 +465,11 @@ const Feed = ({ currentUser }) => {
 
 const Mirror = () => {
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState([{ id: 1, text: "Hi! I was looking through your memories. How can I help you today?", sender: 'ai' }]);
+  const [messages, setMessages] = useState([{ 
+    id: 1, 
+    text: "Hello! 👋 I'm your personal memory companion. I can help you preserve and explore your precious moments. Would you like to connect your social media accounts to import your memories, or upload some photos and videos directly?", 
+    sender: 'ai' 
+  }]);
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef(null);
 
@@ -546,46 +576,178 @@ const Insights = () => {
 
 const Core = ({ connectedApps, setConnectedApps }) => {
   const [processing, setProcessing] = useState(null);
+  const [importing, setImporting] = useState(null);
+  const [uploadStatus, setUploadStatus] = useState(null);
+  const [configStatus, setConfigStatus] = useState({});
+  const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    // Fetch connection config status on mount
+    const fetchConfig = async () => {
+      try {
+        const result = await connectionsAPI.list();
+        if (result.configStatus) {
+          setConfigStatus(result.configStatus);
+        }
+        if (result.connections) {
+          setConnectedApps(result.connections);
+        }
+      } catch {
+        // Use demo mode if API unavailable
+      }
+    };
+    fetchConfig();
+  }, [setConnectedApps]);
 
   const handleConnect = async (appId) => {
     if (connectedApps[appId]) {
       // Disconnect Logic
+      setProcessing(appId);
       try {
-        await connectionsAPI.toggle(appId);
+        await connectionsAPI.disconnect(appId);
       } catch {
-        // Continue even if API fails for demo
+        // Fallback to toggle for demo
+        try {
+          await connectionsAPI.toggle(appId);
+        } catch {
+          // Continue even if API fails for demo
+        }
       }
       const newConnections = { ...connectedApps, [appId]: false };
       setConnectedApps(newConnections);
       localStorage.setItem('eternal_connections', JSON.stringify(newConnections));
+      setProcessing(null);
     } else {
-      // Connect Logic (Simulated OAuth)
-      setProcessing(appId);
-      try {
-        await connectionsAPI.toggle(appId);
-      } catch {
-        // Continue even if API fails for demo
+      // Check if OAuth is configured for this app
+      if (configStatus[appId]) {
+        // Real OAuth flow - open in new window
+        const connectUrl = connectionsAPI.getConnectUrl(appId);
+        const popup = window.open(connectUrl, `Connect ${appId}`, 'width=600,height=700');
+        
+        // Poll for connection status
+        setProcessing(appId);
+        const checkInterval = setInterval(async () => {
+          try {
+            if (popup?.closed) {
+              clearInterval(checkInterval);
+              // Refresh connection status
+              const result = await connectionsAPI.list();
+              if (result.connections) {
+                setConnectedApps(result.connections);
+                localStorage.setItem('eternal_connections', JSON.stringify(result.connections));
+              }
+              setProcessing(null);
+            }
+          } catch {
+            clearInterval(checkInterval);
+            setProcessing(null);
+          }
+        }, 1000);
+      } else {
+        // Demo mode - simulate connection
+        setProcessing(appId);
+        try {
+          await connectionsAPI.toggle(appId);
+        } catch {
+          // Continue even if API fails for demo
+        }
+        setTimeout(() => {
+          const newConnections = { ...connectedApps, [appId]: true };
+          setConnectedApps(newConnections);
+          localStorage.setItem('eternal_connections', JSON.stringify(newConnections));
+          setProcessing(null);
+        }, 1500);
       }
-      setTimeout(() => {
-        const newConnections = { ...connectedApps, [appId]: true };
-        setConnectedApps(newConnections);
-        localStorage.setItem('eternal_connections', JSON.stringify(newConnections));
-        setProcessing(null);
-      }, 2000);
     }
   };
 
+  const handleImport = async (appId) => {
+    setImporting(appId);
+    try {
+      const result = await connectionsAPI.import(appId, 20);
+      if (result.success) {
+        setUploadStatus({ type: 'success', message: `Imported ${result.imported} memories from ${appId}!` });
+        setTimeout(() => setUploadStatus(null), 3000);
+      } else {
+        throw new Error(result.message || 'Import failed');
+      }
+    } catch (err) {
+      setUploadStatus({ type: 'error', message: err.message || 'Failed to import. Please try again.' });
+      setTimeout(() => setUploadStatus(null), 3000);
+    }
+    setImporting(null);
+  };
+
+  const handleFileUpload = async (e) => {
+    const files = e.target.files;
+    if (!files?.length) return;
+
+    setUploadStatus({ type: 'loading', message: `Uploading ${files.length} file(s)...` });
+    
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const file of files) {
+      try {
+        const result = await uploadAPI.uploadFile(file);
+        if (result.memory) {
+          successCount++;
+        } else {
+          failCount++;
+        }
+      } catch {
+        failCount++;
+      }
+    }
+
+    if (successCount > 0 && failCount === 0) {
+      setUploadStatus({ type: 'success', message: `Successfully uploaded ${successCount} file(s)!` });
+    } else if (successCount > 0) {
+      setUploadStatus({ type: 'warning', message: `Uploaded ${successCount} file(s), ${failCount} failed.` });
+    } else {
+      setUploadStatus({ type: 'error', message: 'Upload failed. Please try again.' });
+    }
+
+    setTimeout(() => setUploadStatus(null), 3000);
+    e.target.value = '';
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    const files = e.dataTransfer.files;
+    if (files?.length && fileInputRef.current) {
+      fileInputRef.current.files = files;
+      handleFileUpload({ target: { files } });
+    }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+  };
+
   const apps = [
-    { id: 'instagram', icon: Instagram, label: 'Instagram', color: 'text-pink-500' },
-    { id: 'facebook', icon: Facebook, label: 'Facebook', color: 'text-blue-500' },
-    { id: 'tiktok', icon: TikTokIcon, label: 'TikTok', color: 'text-white' }, 
-    { id: 'photos', icon: ImageIcon, label: 'Google Photos', color: 'text-yellow-500' },
+    { id: 'instagram', icon: Instagram, label: 'Instagram', color: 'text-pink-500', description: 'Photos & Stories' },
+    { id: 'facebook', icon: Facebook, label: 'Facebook', color: 'text-blue-500', description: 'Photos & Videos' },
+    { id: 'tiktok', icon: TikTokIcon, label: 'TikTok', color: 'text-white', description: 'Videos' }, 
+    { id: 'photos', icon: ImageIcon, label: 'Google Photos', color: 'text-yellow-500', description: 'Photos & Videos' },
   ];
 
   return (
     <div className="max-w-2xl mx-auto pt-20 pb-24 md:py-10 px-4 animate-in fade-in duration-500">
       <h2 className="text-2xl font-bold text-white mb-2">The Core</h2>
-      <p className="text-gray-500 text-sm mb-8">Manage encrypted data pipes and legacy uploads.</p>
+      <p className="text-gray-500 text-sm mb-8">Connect your accounts and upload your memories.</p>
+
+      {uploadStatus && (
+        <div className={`mb-6 p-4 rounded-xl flex items-center gap-3 ${
+          uploadStatus.type === 'success' ? 'bg-green-500/10 border border-green-500/20 text-green-400' :
+          uploadStatus.type === 'error' ? 'bg-red-500/10 border border-red-500/20 text-red-400' :
+          uploadStatus.type === 'warning' ? 'bg-yellow-500/10 border border-yellow-500/20 text-yellow-400' :
+          'bg-blue-500/10 border border-blue-500/20 text-blue-400'
+        }`}>
+          {uploadStatus.type === 'loading' && <Loader2 className="animate-spin" size={20} />}
+          <span className="text-sm">{uploadStatus.message}</span>
+        </div>
+      )}
 
       <div className="flex items-center gap-3 bg-green-500/10 border border-green-500/20 p-4 rounded-xl mb-8">
         <Shield className="text-green-500" size={24} />
@@ -595,44 +757,88 @@ const Core = ({ connectedApps, setConnectedApps }) => {
         </div>
       </div>
 
-      <div className="border-2 border-dashed border-white/10 rounded-2xl p-8 flex flex-col items-center justify-center bg-white/5 hover:bg-white/10 transition-colors cursor-pointer mb-8 group">
+      <input 
+        type="file" 
+        ref={fileInputRef}
+        onChange={handleFileUpload}
+        multiple
+        accept="image/*,video/*,audio/*"
+        className="hidden"
+      />
+      <div 
+        onClick={() => fileInputRef.current?.click()}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        className="border-2 border-dashed border-white/10 rounded-2xl p-8 flex flex-col items-center justify-center bg-white/5 hover:bg-white/10 hover:border-cyan-500/30 transition-colors cursor-pointer mb-8 group"
+      >
         <div className="p-4 bg-black rounded-full mb-3 group-hover:scale-110 transition-transform">
           <UploadCloud className="text-cyan-400" size={32} />
         </div>
-        <p className="text-white font-medium">Drop legacy files here</p>
-        <p className="text-gray-500 text-xs mt-1">Supports JPG, MP4, MP3, WAV</p>
+        <p className="text-white font-medium">Drop files or click to upload</p>
+        <p className="text-gray-500 text-xs mt-1">Supports JPG, PNG, MP4, MP3, WAV (up to 50MB)</p>
       </div>
 
       <h3 className="text-white font-medium mb-4 pl-1">Data Sources</h3>
       <div className="space-y-3">
         {apps.map((app) => (
-          <div key={app.id} className="flex items-center justify-between p-4 bg-white/5 border border-white/5 rounded-xl transition-all hover:bg-white/10">
-            <div className="flex items-center gap-4">
-              <div className={`p-2 rounded-full ${connectedApps[app.id] ? 'bg-white/10' : 'bg-transparent'}`}>
-                <app.icon className={app.color} size={24} />
+          <div key={app.id} className="p-4 bg-white/5 border border-white/5 rounded-xl transition-all hover:bg-white/10">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className={`p-2 rounded-full ${connectedApps[app.id] ? 'bg-white/10' : 'bg-transparent'}`}>
+                  <app.icon className={app.color} size={24} />
+                </div>
+                <div>
+                  <span className="text-white text-sm block font-medium">{app.label}</span>
+                  <span className="text-xs text-gray-500 block">
+                    {processing === app.id ? 'Authorizing...' : 
+                     connectedApps[app.id] ? 'Connected' : 
+                     `Connect to import ${app.description}`}
+                  </span>
+                </div>
               </div>
-              <div>
-                <span className="text-white text-sm block font-medium">{app.label}</span>
-                <span className="text-xs text-gray-500 block">
-                  {processing === app.id ? 'Authorizing...' : connectedApps[app.id] ? 'Synced & Active' : 'Not Connected'}
-                </span>
-              </div>
+              
+              <button 
+                onClick={() => handleConnect(app.id)}
+                disabled={processing === app.id}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                  connectedApps[app.id] 
+                    ? 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20' 
+                    : 'bg-white text-black hover:bg-gray-200'
+                }`}
+              >
+                {processing === app.id ? <Loader2 size={14} className="animate-spin" /> : connectedApps[app.id] ? 'Disconnect' : 'Connect'}
+              </button>
             </div>
             
-            <button 
-              onClick={() => handleConnect(app.id)}
-              disabled={processing === app.id}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                connectedApps[app.id] 
-                  ? 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20' 
-                  : 'bg-white text-black hover:bg-gray-200'
-              }`}
-            >
-              {processing === app.id ? <Loader2 size={14} className="animate-spin" /> : connectedApps[app.id] ? 'Disconnect' : 'Connect'}
-            </button>
+            {connectedApps[app.id] && (
+              <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
+                <span className="text-xs text-gray-400">Import your {app.description.toLowerCase()} from {app.label}</span>
+                <button
+                  onClick={() => handleImport(app.id)}
+                  disabled={importing === app.id}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 hover:bg-cyan-500/20 transition-all flex items-center gap-2"
+                >
+                  {importing === app.id ? (
+                    <><Loader2 size={12} className="animate-spin" /> Importing...</>
+                  ) : (
+                    <><UploadCloud size={12} /> Import Now</>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         ))}
       </div>
+
+      {!configStatus.facebook && !configStatus.instagram && !configStatus.tiktok && !configStatus.photos && (
+        <div className="mt-6 p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-xl">
+          <p className="text-yellow-400 text-sm font-medium">Demo Mode Active</p>
+          <p className="text-yellow-400/70 text-xs mt-1">
+            OAuth credentials are not configured. Connections are simulated. To enable real connections, 
+            add OAuth credentials for Facebook, Instagram, TikTok, or Google in the environment variables.
+          </p>
+        </div>
+      )}
     </div>
   );
 };
