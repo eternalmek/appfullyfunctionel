@@ -156,6 +156,35 @@ export const connectionsAPI = {
     });
     return res.json();
   },
+
+  // Initialize OAuth flow - returns the OAuth URL to navigate to
+  // Uses POST to avoid exposing tokens in URL
+  initConnect: async (appId) => {
+    const res = await fetch(`${API_BASE_URL}/connections/${appId}/init`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    });
+    return res.json();
+  },
+
+  // Import media from connected account
+  import: async (appId, limit = 20) => {
+    const res = await fetch(`${API_BASE_URL}/connections/${appId}/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify({ limit }),
+    });
+    return res.json();
+  },
+
+  // Disconnect an app
+  disconnect: async (appId) => {
+    const res = await fetch(`${API_BASE_URL}/connections/${appId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
 };
 
 // Mirror (AI assistant) APIs
