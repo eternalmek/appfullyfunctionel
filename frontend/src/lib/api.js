@@ -67,6 +67,21 @@ export const authAPI = {
     });
     return res.json();
   },
+
+  // Get OAuth configuration status
+  getOAuthConfig: async () => {
+    const res = await fetch(`${API_BASE_URL}/auth/oauth/config`);
+    return res.json();
+  },
+
+  // Initialize OAuth login flow - returns the OAuth URL
+  initOAuthLogin: async (provider) => {
+    const res = await fetch(`${API_BASE_URL}/auth/oauth/${provider}/init`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    return res.json();
+  },
 };
 
 // Memories APIs
