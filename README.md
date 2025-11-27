@@ -11,11 +11,11 @@ This repository provides a complete full-stack implementation for the EternalMe 
 ## Backend Features
 
 - Email/password auth with JWT + refresh tokens
-- OAuth starter endpoints for Facebook/Instagram and TikTok
+- OAuth endpoints for Facebook/Instagram, TikTok, and Google Photos
 - Memory CRUD (create, read, update, delete)
 - Likes and comments (with realtime socket notifications)
 - File upload to S3
-- Mirror assistant integrated with OpenAI (if API key provided)
+- **AI Mirror assistant** - Powered by OpenAI with intelligent fallback responses
 - Prisma ORM (Postgres/Supabase) with seed script
 - Socket.io for realtime events
 - Email helper (nodemailer) for future verification/reset
@@ -24,8 +24,8 @@ This repository provides a complete full-stack implementation for the EternalMe 
 
 - React 19 with Vite for fast development
 - Tailwind CSS for styling
-- Supabase client integration for database
-- Authentication (email/password + social login simulation)
+- Clean API-based architecture (all data via backend)
+- Authentication (email/password + social login)
 - Memory feed with list/grid views
 - AI Mirror assistant chat interface
 - Analytics/Insights dashboard
@@ -39,9 +39,9 @@ This repository provides a complete full-stack implementation for the EternalMe 
 
 1. Copy `.env.example` -> `.env` and fill values:
    ```
-   DATABASE_URL=your-supabase-postgres-url
+   DATABASE_URL=your-postgres-connection-string
    JWT_SECRET=your-secret
-   OPENAI_API_KEY=optional-for-mirror
+   OPENAI_API_KEY=optional-but-recommended-for-ai-features
    ```
 
 2. Install dependencies:
@@ -79,8 +79,6 @@ This repository provides a complete full-stack implementation for the EternalMe 
 
 3. Copy `.env.example` -> `.env` and fill values:
    ```
-   VITE_SUPABASE_URL=your-supabase-url
-   VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
    VITE_API_URL=http://localhost:4000
    ```
 
@@ -102,8 +100,6 @@ This repository provides a complete full-stack implementation for the EternalMe 
 2. Connect your repository to Vercel
 3. Set the root directory to `frontend`
 4. Add environment variables:
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
    - `VITE_API_URL` (your backend URL)
 5. Deploy!
 
@@ -115,13 +111,55 @@ The backend can be deployed to:
 - Render
 - Any Node.js hosting
 
-## Connecting to Supabase
+## Database Setup (PostgreSQL/Supabase)
+
+You can use any PostgreSQL database. Supabase is recommended for easy setup:
 
 1. Create a Supabase project at https://supabase.com
 2. Get your database connection string from Project Settings -> Database
-3. Get your API URL and anon key from Project Settings -> API
-4. Use the connection string as `DATABASE_URL` in backend
-5. Use the API URL and anon key in frontend environment variables
+3. Use the connection string as `DATABASE_URL` in your backend `.env` file
+4. Run Prisma migrations: `npx prisma migrate dev`
+
+**Note:** The frontend does not need Supabase credentials - it communicates only with the backend API.
+
+## Enabling AI Features (OpenAI)
+
+For full AI Mirror capabilities, add your OpenAI API key to the backend `.env`:
+
+```
+OPENAI_API_KEY=sk-your-openai-api-key
+OPENAI_MODEL=gpt-4o-mini  # optional, defaults to gpt-4o-mini
+```
+
+Without an OpenAI API key, the Mirror will use intelligent fallback responses that can still help users navigate the app.
+
+## Enabling Social Media Connections
+
+To enable real OAuth connections with social media platforms, you need to register your app with each provider and add the credentials to your backend `.env`:
+
+### Facebook/Instagram
+```
+OAUTH_FACEBOOK_CLIENT_ID=your-facebook-app-id
+OAUTH_FACEBOOK_CLIENT_SECRET=your-facebook-app-secret
+OAUTH_FACEBOOK_CALLBACK_URL=https://your-backend.com/connections/facebook/callback
+OAUTH_INSTAGRAM_CALLBACK_URL=https://your-backend.com/connections/instagram/callback
+```
+
+### TikTok
+```
+OAUTH_TIKTOK_CLIENT_ID=your-tiktok-client-key
+OAUTH_TIKTOK_CLIENT_SECRET=your-tiktok-client-secret
+OAUTH_TIKTOK_CALLBACK_URL=https://your-backend.com/connections/tiktok/callback
+```
+
+### Google Photos
+```
+OAUTH_GOOGLE_CLIENT_ID=your-google-client-id
+OAUTH_GOOGLE_CLIENT_SECRET=your-google-client-secret
+OAUTH_GOOGLE_CALLBACK_URL=https://your-backend.com/connections/photos/callback
+```
+
+Without OAuth credentials, the app runs in **demo mode** where connections are simulated locally.
 
 ## API Summary
 
